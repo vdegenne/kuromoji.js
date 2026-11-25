@@ -164,17 +164,38 @@ export interface Tokenizer<T> {
 export interface TokenizerBuilder<T> {
 	build(callback: (err: Error, tokenizer: Tokenizer<T>) => void): void
 }
+
+/**
+ * Progress information for dictionary loading.
+ */
 export interface DictionaryProgress {
+	/** Number of bytes loaded so far. */
 	loaded: number
+
+	/** Total number of bytes to load, when known. */
 	total: number
+
+	/** Whether the total size is known and can be used to calculate progress. */
 	lengthComputable: boolean
+
+	/** Number of dictionary files successfully loaded. */
 	filesLoaded: number
+
+	/** Total number of dictionary files to load. */
 	filesTotal: number
 }
 
+/**
+ * Options for configuring the tokenizer builder.
+ */
 export interface TokenizerBuilderOption {
+	/** Path to the directory containing the dictionary files. */
 	dicPath?: string | undefined
+
+	/** Dictionary file format: uncompressed `.dat` or compressed `.dat.gz`. */
 	dictFileFormat?: 'dat' | 'gz'
+
+	/** Callback invoked when dictionary loading progress is updated. */
 	onProgress?: ((progress: DictionaryProgress) => void) | undefined
 }
 
