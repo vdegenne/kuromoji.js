@@ -3,58 +3,105 @@
  * Copyright 2010-2014 Atilika Inc. and contributors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
+ * you may not use this file except in compliance with
+ * the License.
  * You may obtain a copy of the License at
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * distributed under the License is distributed
+ * on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either
+ * express or implied.
+ * See the License for the specific language governing
+ * permissions and limitations under the License.
  */
 
-'use strict';
+'use strict'
 
-var DictionaryLoader = require('./DictionaryLoader');
+var DictionaryLoader = require('./DictionaryLoader')
 
 /**
  * BrowserDictionaryLoader inherits DictionaryLoader, using XMLHttpRequest
  * @param {string} dic_path Dictionary path
+ * @param {Object} options Loader options
  * @constructor
  */
-function BrowserDictionaryLoader(dic_path) {
-	DictionaryLoader.apply(this, [dic_path]);
+function BrowserDictionaryLoader(dic_path, options) {
+	DictionaryLoader.apply(this, [dic_path, options])
 }
 
-BrowserDictionaryLoader.prototype = Object.create(DictionaryLoader.prototype);
+BrowserDictionaryLoader.prototype = Object.create(DictionaryLoader.prototype)
+BrowserDictionaryLoader.prototype.constructor = BrowserDictionaryLoader
 
 /**
  * Utility function to load dictionary
  * @param {string} url Dictionary URL
+ * @param {Function} onProgress Download progress callback
  * @param {BrowserDictionaryLoader~onLoad} callback Callback function
  */
-BrowserDictionaryLoader.prototype.loadArrayBuffer = function (url, callback) {
-	var xhr = new XMLHttpRequest();
-	xhr.open('GET', url, true);
-	xhr.responseType = 'arraybuffer';
+BrowserDictionaryLoader.prototype.loadArrayBuffer = function (
+	url,
+	onProgress,
+	callback,
+) {
+	var xhr = new XMLHttpRequest()
+	var dictFileFormat = this.dict_file_format
+
+	xhr.open('GET', url, true)
+	xhr.responseType = 'arraybuffer'
+
+	xhr.onprogress = function (event) {
+		if (typeof onProgress === 'function') {
+			onProgress(event)
+		}
+	}
 
 	xhr.onload = function () {
-		if (this.status > 0 && this.status !== 200) {
-			callback(xhr.statusText, null);
-			return;
+		if (xhr.status > 0 && xhr.status !== 200) {
+			callback(new Error(xhr.statusText || 'HTTP ' + xhr.status), null)
+			return
 		}
 
-		callback(null, xhr.response);
-	};
+		if (dictFileFormat === 'dat') {
+			callback(null, xhr.response)
+			return
+		}
 
-	xhr.onerror = function (err) {
-		callback(err, null);
-	};
+		if (typeof DecompressionStream === 'undefined') {
+			callback(
+				new Error('DecompressionStream is not supported by this browser'),
+				null,
+			)
+			return
+		}
 
-	xhr.send();
-};
+		try {
+			var compressed = new Blob([xhr.response])
+			var decompressed = compressed
+				.stream()
+				.pipeThrough(new DecompressionStream('gzip'))
+
+			new Response(decompressed).arrayBuffer().then(
+				function (buffer) {
+					callback(null, buffer)
+				},
+				function (err) {
+					callback(err, null)
+				},
+			)
+		} catch (err) {
+			callback(err, null)
+		}
+	}
+
+	xhr.onerror = function () {
+		callback(new Error('Dictionary download failed: ' + url), null)
+	}
+
+	xhr.send()
+}
 
 /**
  * Callback
@@ -63,4 +110,4 @@ BrowserDictionaryLoader.prototype.loadArrayBuffer = function (url, callback) {
  * @param {ArrayBuffer} buffer Loaded buffer
  */
 
-module.exports = BrowserDictionaryLoader;
+module.exports = BrowserDictionaryLoader

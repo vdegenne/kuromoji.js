@@ -6941,56 +6941,51 @@ module.exports = Tokenizer;
  * Copyright 2010-2014 Atilika Inc. and contributors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
+ * you may not use this file except in compliance with
+ * the License.
  * You may obtain a copy of the License at
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed
+ * on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS
+ * OF ANY KIND, either express or implied.
+ * See the License for the specific language governing
+ * permissions and limitations under the License.
  */
 
-"use strict";
+'use strict'
 
-var Tokenizer = require("./Tokenizer");
-var DictionaryLoader = require("./loader/NodeDictionaryLoader");
+var Tokenizer = require('./Tokenizer')
+var DictionaryLoader = require('./loader/NodeDictionaryLoader')
 
-/**
- * TokenizerBuilder create Tokenizer instance.
- * @param {Object} option JSON object which have key-value pairs settings
- * @param {string} option.dicPath Dictionary directory path (or URL using in browser)
- * @constructor
- */
 function TokenizerBuilder(option) {
-    if (option.dicPath == null) {
-        this.dic_path = "dict/";
-    } else {
-        this.dic_path = option.dicPath;
-    }
+	option = option || {}
+
+	this.dic_path = option.dicPath == null ? 'dict/' : option.dicPath
+
+	this.dict_file_format = option.dictFileFormat || 'dat'
+	this.on_progress = option.onProgress || null
 }
 
-/**
- * Build Tokenizer instance by asynchronous manner
- * @param {TokenizerBuilder~onLoad} callback Callback function
- */
 TokenizerBuilder.prototype.build = function (callback) {
-    var loader = new DictionaryLoader(this.dic_path);
-    loader.load(function (err, dic) {
-        callback(err, new Tokenizer(dic));
-    });
-};
+	var loader = new DictionaryLoader(this.dic_path, {
+		dictFileFormat: this.dict_file_format,
+		onProgress: this.on_progress,
+	})
 
-/**
- * Callback used by build
- * @callback TokenizerBuilder~onLoad
- * @param {Object} err Error object
- * @param {Tokenizer} tokenizer Prepared Tokenizer
- */
+	loader.load(function (err, dic) {
+		if (err) {
+			callback(err, null)
+			return
+		}
 
-module.exports = TokenizerBuilder;
+		callback(null, new Tokenizer(dic))
+	})
+}
+
+module.exports = TokenizerBuilder
 
 },{"./Tokenizer":5,"./loader/NodeDictionaryLoader":18}],7:[function(require,module,exports){
 /*
@@ -8052,58 +8047,105 @@ module.exports = kuromoji;
  * Copyright 2010-2014 Atilika Inc. and contributors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
+ * you may not use this file except in compliance with
+ * the License.
  * You may obtain a copy of the License at
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * distributed under the License is distributed
+ * on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either
+ * express or implied.
+ * See the License for the specific language governing
+ * permissions and limitations under the License.
  */
 
-'use strict';
+'use strict'
 
-var DictionaryLoader = require('./DictionaryLoader');
+var DictionaryLoader = require('./DictionaryLoader')
 
 /**
  * BrowserDictionaryLoader inherits DictionaryLoader, using XMLHttpRequest
  * @param {string} dic_path Dictionary path
+ * @param {Object} options Loader options
  * @constructor
  */
-function BrowserDictionaryLoader(dic_path) {
-	DictionaryLoader.apply(this, [dic_path]);
+function BrowserDictionaryLoader(dic_path, options) {
+	DictionaryLoader.apply(this, [dic_path, options])
 }
 
-BrowserDictionaryLoader.prototype = Object.create(DictionaryLoader.prototype);
+BrowserDictionaryLoader.prototype = Object.create(DictionaryLoader.prototype)
+BrowserDictionaryLoader.prototype.constructor = BrowserDictionaryLoader
 
 /**
  * Utility function to load dictionary
  * @param {string} url Dictionary URL
+ * @param {Function} onProgress Download progress callback
  * @param {BrowserDictionaryLoader~onLoad} callback Callback function
  */
-BrowserDictionaryLoader.prototype.loadArrayBuffer = function (url, callback) {
-	var xhr = new XMLHttpRequest();
-	xhr.open('GET', url, true);
-	xhr.responseType = 'arraybuffer';
+BrowserDictionaryLoader.prototype.loadArrayBuffer = function (
+	url,
+	onProgress,
+	callback,
+) {
+	var xhr = new XMLHttpRequest()
+	var dictFileFormat = this.dict_file_format
+
+	xhr.open('GET', url, true)
+	xhr.responseType = 'arraybuffer'
+
+	xhr.onprogress = function (event) {
+		if (typeof onProgress === 'function') {
+			onProgress(event)
+		}
+	}
 
 	xhr.onload = function () {
-		if (this.status > 0 && this.status !== 200) {
-			callback(xhr.statusText, null);
-			return;
+		if (xhr.status > 0 && xhr.status !== 200) {
+			callback(new Error(xhr.statusText || 'HTTP ' + xhr.status), null)
+			return
 		}
 
-		callback(null, xhr.response);
-	};
+		if (dictFileFormat === 'dat') {
+			callback(null, xhr.response)
+			return
+		}
 
-	xhr.onerror = function (err) {
-		callback(err, null);
-	};
+		if (typeof DecompressionStream === 'undefined') {
+			callback(
+				new Error('DecompressionStream is not supported by this browser'),
+				null,
+			)
+			return
+		}
 
-	xhr.send();
-};
+		try {
+			var compressed = new Blob([xhr.response])
+			var decompressed = compressed
+				.stream()
+				.pipeThrough(new DecompressionStream('gzip'))
+
+			new Response(decompressed).arrayBuffer().then(
+				function (buffer) {
+					callback(null, buffer)
+				},
+				function (err) {
+					callback(err, null)
+				},
+			)
+		} catch (err) {
+			callback(err, null)
+		}
+	}
+
+	xhr.onerror = function () {
+		callback(new Error('Dictionary download failed: ' + url), null)
+	}
+
+	xhr.send()
+}
 
 /**
  * Callback
@@ -8112,7 +8154,7 @@ BrowserDictionaryLoader.prototype.loadArrayBuffer = function (url, callback) {
  * @param {ArrayBuffer} buffer Loaded buffer
  */
 
-module.exports = BrowserDictionaryLoader;
+module.exports = BrowserDictionaryLoader
 
 },{"./DictionaryLoader":19}],19:[function(require,module,exports){
 /*
@@ -8120,138 +8162,250 @@ module.exports = BrowserDictionaryLoader;
  * Copyright 2010-2014 Atilika Inc. and contributors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
+ * you may not use this file except in compliance with
+ * the License.
  * You may obtain a copy of the License at
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either
+ * express or implied.
+ * See the License for the specific language governing
+ * permissions and limitations under the License.
  */
 
-"use strict";
+'use strict'
 
-var path = require("path");
-var async = require("async");
-var DynamicDictionaries = require("../dict/DynamicDictionaries");
+var path = require('path')
+var async = require('async')
+var DynamicDictionaries = require('../dict/DynamicDictionaries')
+
+var DICTIONARY_FILES = [
+	'base',
+	'check',
+	'tid',
+	'tid_pos',
+	'tid_map',
+	'cc',
+	'unk',
+	'unk_pos',
+	'unk_map',
+	'unk_char',
+	'unk_compat',
+	'unk_invoke',
+]
 
 /**
  * DictionaryLoader base constructor
  * @param {string} dic_path Dictionary path
+ * @param {Object} options Loader options
  * @constructor
  */
-function DictionaryLoader(dic_path) {
-    this.dic = new DynamicDictionaries();
-    this.dic_path = dic_path;
+function DictionaryLoader(dic_path, options) {
+	options = options || {}
+
+	this.dic = new DynamicDictionaries()
+	this.dic_path = dic_path
+	this.dict_file_format = options.dictFileFormat || 'dat'
+	this.onProgress = options.onProgress || null
+
+	if (this.dict_file_format !== 'dat' && this.dict_file_format !== 'gz') {
+		throw new Error(
+			'Unsupported dictionary file format: ' + this.dict_file_format,
+		)
+	}
 }
 
-DictionaryLoader.prototype.loadArrayBuffer = function (file, callback) {
-    throw new Error("DictionaryLoader#loadArrayBuffer should be overwrite");
-};
+DictionaryLoader.prototype.loadArrayBuffer = function (
+	file,
+	onProgress,
+	callback,
+) {
+	throw new Error('DictionaryLoader#loadArrayBuffer should be overwritten')
+}
 
 /**
  * Load dictionary files
- * @param {DictionaryLoader~onLoad} load_callback Callback function called after loaded
+ * @param {DictionaryLoader~onLoad} load_callback Callback function
  */
 DictionaryLoader.prototype.load = function (load_callback) {
-    var dic = this.dic;
-    var dic_path = this.dic_path;
-    var loadArrayBuffer = this.loadArrayBuffer;
+	var dic = this.dic
+	var dic_path = this.dic_path
+	var loadArrayBuffer = this.loadArrayBuffer
+	var extension = this.dict_file_format === 'gz' ? '.dat.gz' : '.dat'
+	var progress = {}
+	var self = this
 
-    async.parallel([
-        // Trie
-        function (callback) {
-            async.map([ "base.dat", "check.dat" ], function (filename, _callback) {
-                loadArrayBuffer(path.join(dic_path, filename), function (err, buffer) {
-                    if(err) {
-                        return _callback(err);
-                    }
-                    _callback(null, buffer);
-                });
-            }, function (err, buffers) {
-                if(err) {
-                    return callback(err);
-                }
-                var base_buffer = new Int32Array(buffers[0]);
-                var check_buffer = new Int32Array(buffers[1]);
+	DICTIONARY_FILES.forEach(function (name) {
+		progress[name] = {
+			loaded: 0,
+			total: 0,
+			lengthComputable: false,
+			complete: false,
+		}
+	})
 
-                dic.loadTrie(base_buffer, check_buffer);
-                callback(null);
-            });
-        },
-        // Token info dictionaries
-        function (callback) {
-            async.map([ "tid.dat", "tid_pos.dat", "tid_map.dat" ], function (filename, _callback) {
-                loadArrayBuffer(path.join(dic_path, filename), function (err, buffer) {
-                    if(err) {
-                        return _callback(err);
-                    }
-                    _callback(null, buffer);
-                });
-            }, function (err, buffers) {
-                if(err) {
-                    return callback(err);
-                }
-                var token_info_buffer = new Uint8Array(buffers[0]);
-                var pos_buffer = new Uint8Array(buffers[1]);
-                var target_map_buffer = new Uint8Array(buffers[2]);
+	function reportProgress() {
+		if (typeof self.onProgress !== 'function') {
+			return
+		}
 
-                dic.loadTokenInfoDictionaries(token_info_buffer, pos_buffer, target_map_buffer);
-                callback(null);
-            });
-        },
-        // Connection cost matrix
-        function (callback) {
-            loadArrayBuffer(path.join(dic_path, "cc.dat"), function (err, buffer) {
-                if(err) {
-                    return callback(err);
-                }
-                var cc_buffer = new Int16Array(buffer);
-                dic.loadConnectionCosts(cc_buffer);
-                callback(null);
-            });
-        },
-        // Unknown dictionaries
-        function (callback) {
-            async.map([ "unk.dat", "unk_pos.dat", "unk_map.dat", "unk_char.dat", "unk_compat.dat", "unk_invoke.dat" ], function (filename, _callback) {
-                loadArrayBuffer(path.join(dic_path, filename), function (err, buffer) {
-                    if(err) {
-                        return _callback(err);
-                    }
-                    _callback(null, buffer);
-                });
-            }, function (err, buffers) {
-                if(err) {
-                    return callback(err);
-                }
-                var unk_buffer = new Uint8Array(buffers[0]);
-                var unk_pos_buffer = new Uint8Array(buffers[1]);
-                var unk_map_buffer = new Uint8Array(buffers[2]);
-                var cat_map_buffer = new Uint8Array(buffers[3]);
-                var compat_cat_map_buffer = new Uint32Array(buffers[4]);
-                var invoke_def_buffer = new Uint8Array(buffers[5]);
+		var loaded = 0
+		var total = 0
+		var filesLoaded = 0
+		var lengthComputable = true
 
-                dic.loadUnknownDictionaries(unk_buffer, unk_pos_buffer, unk_map_buffer, cat_map_buffer, compat_cat_map_buffer, invoke_def_buffer);
-                // dic.loadUnknownDictionaries(char_buffer, unk_buffer);
-                callback(null);
-            });
-        }
-    ], function (err) {
-        load_callback(err, dic);
-    });
-};
+		DICTIONARY_FILES.forEach(function (name) {
+			var file = progress[name]
 
-/**
- * Callback
- * @callback DictionaryLoader~onLoad
- * @param {Object} err Error object
- * @param {DynamicDictionaries} dic Loaded dictionary
- */
+			loaded += file.loaded
 
-module.exports = DictionaryLoader;
+			if (file.complete) {
+				filesLoaded++
+			}
+
+			if (file.lengthComputable) {
+				total += file.total
+			} else {
+				lengthComputable = false
+			}
+		})
+
+		self.onProgress({
+			loaded: loaded,
+			total: total,
+			lengthComputable: lengthComputable,
+			filesLoaded: filesLoaded,
+			filesTotal: DICTIONARY_FILES.length,
+		})
+	}
+
+	function loadFile(name, callback) {
+		var filename = name + extension
+		var fileProgress = progress[name]
+
+		loadArrayBuffer.call(
+			self,
+			path.join(dic_path, filename),
+			function (event) {
+				fileProgress.loaded = event.loaded || 0
+				fileProgress.total = event.total || 0
+				fileProgress.lengthComputable = event.lengthComputable === true
+
+				reportProgress()
+			},
+			function (err, buffer) {
+				if (!err) {
+					fileProgress.complete = true
+
+					if (!fileProgress.lengthComputable) {
+						fileProgress.loaded = 0
+					} else {
+						fileProgress.loaded = fileProgress.total
+					}
+				}
+
+				reportProgress()
+				callback(err, buffer)
+			},
+		)
+	}
+
+	async.parallel(
+		[
+			// Trie
+			function (callback) {
+				async.map(['base', 'check'], loadFile, function (err, buffers) {
+					if (err) {
+						return callback(err)
+					}
+
+					var base_buffer = new Int32Array(buffers[0])
+					var check_buffer = new Int32Array(buffers[1])
+
+					dic.loadTrie(base_buffer, check_buffer)
+					callback(null)
+				})
+			},
+
+			// Token info dictionaries
+			function (callback) {
+				async.map(
+					['tid', 'tid_pos', 'tid_map'],
+					loadFile,
+					function (err, buffers) {
+						if (err) {
+							return callback(err)
+						}
+
+						var token_info_buffer = new Uint8Array(buffers[0])
+						var pos_buffer = new Uint8Array(buffers[1])
+						var target_map_buffer = new Uint8Array(buffers[2])
+
+						dic.loadTokenInfoDictionaries(
+							token_info_buffer,
+							pos_buffer,
+							target_map_buffer,
+						)
+
+						callback(null)
+					},
+				)
+			},
+
+			// Connection cost matrix
+			function (callback) {
+				loadFile('cc', function (err, buffer) {
+					if (err) {
+						return callback(err)
+					}
+
+					var cc_buffer = new Int16Array(buffer)
+					dic.loadConnectionCosts(cc_buffer)
+					callback(null)
+				})
+			},
+
+			// Unknown dictionaries
+			function (callback) {
+				async.map(
+					['unk', 'unk_pos', 'unk_map', 'unk_char', 'unk_compat', 'unk_invoke'],
+					loadFile,
+					function (err, buffers) {
+						if (err) {
+							return callback(err)
+						}
+
+						var unk_buffer = new Uint8Array(buffers[0])
+						var unk_pos_buffer = new Uint8Array(buffers[1])
+						var unk_map_buffer = new Uint8Array(buffers[2])
+						var cat_map_buffer = new Uint8Array(buffers[3])
+						var compat_cat_map_buffer = new Uint32Array(buffers[4])
+						var invoke_def_buffer = new Uint8Array(buffers[5])
+
+						dic.loadUnknownDictionaries(
+							unk_buffer,
+							unk_pos_buffer,
+							unk_map_buffer,
+							cat_map_buffer,
+							compat_cat_map_buffer,
+							invoke_def_buffer,
+						)
+
+						callback(null)
+					},
+				)
+			},
+		],
+		function (err) {
+			load_callback(err, dic)
+		},
+	)
+}
+
+module.exports = DictionaryLoader
 
 },{"../dict/DynamicDictionaries":10,"async":1,"path":3}],20:[function(require,module,exports){
 /*

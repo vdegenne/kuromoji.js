@@ -1,6 +1,6 @@
 {
-	"name": "@vdegenne/kuromoji-dat",
-	"description": "Kuromoji.js modified to load uncompressed dictionary files (.dat).",
+	"name": "@vdegenne/kuromoji-core",
+	"description": "Core Kuromoji.js engine with support for .dat and .dat.gz dictionaries and loading progress tracking.",
 	"version": "0.1.2",
 	"browser": {
 		"./src/loader/NodeDictionaryLoader.js": "./src/loader/BrowserDictionaryLoader.js"
