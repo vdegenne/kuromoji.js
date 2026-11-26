@@ -1,7 +1,7 @@
 {
 	"name": "@vdegenne/kuromoji-core",
 	"description": "Core Kuromoji.js engine with support for .dat and .dat.gz dictionaries and loading progress tracking.",
-	"version": "0.1.4",
+	"version": "0.1.5",
 	"browser": {
 		"./src/loader/NodeDictionaryLoader.js": "./src/loader/BrowserDictionaryLoader.js"
 	},

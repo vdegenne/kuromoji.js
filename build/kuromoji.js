@@ -8047,17 +8047,16 @@ module.exports = kuromoji;
  * Copyright 2010-2014 Atilika Inc. and contributors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with
- * the License.
+ * you may not use this file except in compliance
+ * with the License.
  * You may obtain a copy of the License at
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed
- * on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either
- * express or implied.
+ * on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND,
+ * either express or implied.
  * See the License for the specific language governing
  * permissions and limitations under the License.
  */
@@ -8113,6 +8112,17 @@ BrowserDictionaryLoader.prototype.loadArrayBuffer = function (
 			return
 		}
 
+		var buffer = xhr.response
+		var bytes = new Uint8Array(buffer)
+
+		// Gzip magic number: 0x1f 0x8b
+		var isGzip = bytes[0] === 0x1f && bytes[1] === 0x8b
+
+		if (!isGzip) {
+			callback(null, buffer)
+			return
+		}
+
 		if (typeof DecompressionStream === 'undefined') {
 			callback(
 				new Error('DecompressionStream is not supported by this browser'),
@@ -8122,7 +8132,7 @@ BrowserDictionaryLoader.prototype.loadArrayBuffer = function (
 		}
 
 		try {
-			var compressed = new Blob([xhr.response])
+			var compressed = new Blob([buffer])
 			var decompressed = compressed
 				.stream()
 				.pipeThrough(new DecompressionStream('gzip'))
